@@ -1,0 +1,23 @@
+# Environnement
+.env
+*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# PHP
+vendor/
+composer.lock
+
+# Logs
+*.log
+
+# PDF générés (s'ils sont dans le projet)
+ATHENA_APP/dompdf/

@@ -1,0 +1,36 @@
+* { box-sizing: border-box; font-family: sans-serif; }
+body { 
+    background: #f4f7f6; margin: 0; padding: 15px; 
+}
+
+.container { 
+    max-width: 500px; margin: auto; background: white; 
+    padding: 20px; 
+    border-radius: 12px; 
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+}
+h2 { 
+    color: #2c3e50; text-align: center; 
+}
+
+.form-group { 
+    margin-bottom: 15px;
+}
+label { 
+    display: block; margin-bottom: 5px; font-weight: bold; color: #34495e; }
+
+input, select, textarea { 
+    width: 100%; padding: 12px; border: 1px solid #ddd; 
+    border-radius: 8px; font-size: 16px; /* Empêche le zoom auto sur iOS */
+}
+
+button { 
+    width: 100%; padding: 15px; background: #27ae60; 
+    color: white; border: none; border-radius: 8px; 
+    font-size: 18px; font-weight: bold; cursor: pointer;
+}
+
+a div:active {
+    transform: scale(0.95);
+    background-color: #f9f9f9 !important;
+}
