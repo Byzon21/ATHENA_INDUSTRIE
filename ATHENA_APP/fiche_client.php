@@ -19,7 +19,7 @@ $stmtH->execute([$id]);
 $historique = $stmtH->fetchAll();
 
 // ============================================================
-// GRAPHIQUE SVG GÉNÉRÉ LOCALEMENT (sans dépendance externe)
+// GRAPHIQUE D'ÉVOLUTION — Généré en HTML/CSS (compatible Dompdf)
 // ============================================================
 $graphLabels = [];
 $graphWeights = [];
@@ -37,97 +37,166 @@ while (!empty($graphTailles) && end($graphTailles) === null) {
     array_pop($graphTailles);
 }
 
-// Générer un graphique SVG inline
-function generateSvgChart($labels, $weights, $tailles) {
+/**
+ * Génère un graphique d'évolution visuel en HTML/CSS pur
+ * Compatible Dompdf à 100% (pas de SVG, pas de JS)
+ */
+function generateEvolutionChart($labels, $weights, $tailles) {
     $nb = count($labels);
-    if ($nb === 0) return '<p style="text-align:center;color:#999;">Aucune donnée de suivi</p>';
+    if ($nb === 0) {
+        return '<p style="text-align:center;color:#999;font-size:13px;">Aucune donnée de suivi disponible.</p>';
+    }
     
-    $W = 500; $H = 200;
-    $pad = [40, 45, 30, 20]; // left, top, right, bottom
-    $gw = $W - $pad[0] - $pad[2];
-    $gh = $H - $pad[1] - $pad[3];
+    if ($nb === 1) {
+        $w = $weights[0] ?? 0;
+        $t = $tailles[0] ?? null;
+        $html = '<div style="text-align:center;padding:15px;">';
+        $html .= '<div style="font-size:24px;font-weight:bold;color:#b8860b;">' . number_format($w, 1) . ' kg</div>';
+        $html .= '<div style="font-size:12px;color:#999;">Poids actuel &mdash; <strong>' . htmlspecialchars($labels[0]) . '</strong></div>';
+        if ($t) {
+            $html .= '<div style="font-size:18px;font-weight:bold;color:#e74c3c;margin-top:8px;">' . number_format($t, 1) . ' cm</div>';
+            $html .= '<div style="font-size:12px;color:#999;">Tour de taille</div>';
+        }
+        $html .= '<div style="margin-top:10px;font-size:12px;color:#999;">Ajoutez plus de consultations pour voir la courbe d\'évolution.</div>';
+        $html .= '</div>';
+        return $html;
+    }
     
-    // Trouver les min/max pour les échelles
-    $w_all = array_filter($weights);
-    $t_all = array_filter($tailles);
-    $all_w = count($w_all) ? $w_all : [0, 100];
-    $all_t = count($t_all) ? $t_all : [0, 100];
-    $min_w = min($all_w); $max_w = max($all_w);
-    $min_t = min($all_t); $max_t = max($all_t);
-    $range_w = ($max_w - $min_w) ?: 10;
-    $range_t = ($max_t - $min_t) ?: 10;
-    $min_w = floor(($min_w - $range_w * 0.1) / 5) * 5;
-    $max_w = ceil(($max_w + $range_w * 0.1) / 5) * 5;
-    $min_t = floor(($min_t - $range_t * 0.1) / 5) * 5;
-    $max_t = ceil(($max_t + $range_t * 0.1) / 5) * 5;
-    if ($min_w >= $max_w) $max_w = $min_w + 10;
-    if ($min_t >= $max_t) $max_t = $min_t + 10;
+    // Trouver les bornes
+    $min_w = min($weights);
+    $max_w = max($weights);
+    $range_w = ($max_w - $min_w) ?: 1;
+    $marge = $range_w * 0.15;
+    $baseline_w = max(0, $min_w - $marge);
+    $top_w = $max_w + $marge;
     
-    $x_step = $nb > 1 ? $gw / ($nb - 1) : $gw / 2;
+    $has_tailles = count(array_filter($tailles)) > 0;
+    if ($has_tailles) {
+        $t_filtres = array_filter($tailles);
+        $min_t = min($t_filtres);
+        $max_t = max($t_filtres);
+        $range_t = ($max_t - $min_t) ?: 1;
+        $marge_t = $range_t * 0.15;
+        $baseline_t = max(0, $min_t - $marge_t);
+        $top_t = $max_t + $marge_t;
+    }
     
-    $lines_w = '';
-    $lines_t = '';
-    $circles = '';
-    $labels_svg = '';
+    $chart_height = 160;
+    $left_margin = 35;
+    $point_spacing = $nb > 1 ? min(60, (420 - $left_margin) / ($nb - 1)) : 0;
+    $total_width = max($left_margin + ($nb - 1) * $point_spacing + 40, 300);
+    
+    // Génération du graphique en HTML/CSS
+    $html = '<div style="position:relative;width:' . $total_width . 'px;height:' . ($chart_height + 35) . 'px;margin:0 auto;border-left:1px solid #ddd;border-bottom:1px solid #ddd;">';
+    
+    // Grille horizontale (3 lignes)
+    for ($i = 0; $i <= 3; $i++) {
+        $y_pos = $chart_height - ($chart_height * $i / 3);
+        $val_w = $baseline_w + ($top_w - $baseline_w) * $i / 3;
+        $html .= '<div style="position:absolute;left:' . ($left_margin - 2) . 'px;top:' . round($y_pos) . 'px;width:' . ($total_width - $left_margin) . 'px;height:1px;background:#f0f0f0;"></div>';
+        $html .= '<div style="position:absolute;left:0px;top:' . round($y_pos - 6) . 'px;width:' . ($left_margin - 5) . 'px;text-align:right;font-size:9px;color:#999;">' . number_format($val_w, 1) . '</div>';
+    }
+    
+    // Points de poids
+    $points_html = '';
+    $labels_html = '';
     
     foreach ($weights as $i => $w) {
-        $x = $pad[0] + ($nb > 1 ? $i * $x_step : $gw / 2);
-        $y = $pad[1] + $gh - (($w - $min_w) / ($max_w - $min_w)) * $gh;
-        $y = max($pad[1], min($pad[1] + $gh, $y));
+        $x = $left_margin + $i * $point_spacing;
+        $ratio = ($w - $baseline_w) / ($top_w - $baseline_w);
+        $y = $chart_height - ($ratio * $chart_height);
+        $y = max(5, min($chart_height - 5, $y));
         
-        $lines_w .= ($i > 0 ? " L$x,$y" : " M$x,$y");
+        // Cercle
+        $points_html .= '<div style="position:absolute;left:' . round($x - 5) . 'px;top:' . round($y - 5) . 'px;width:10px;height:10px;border-radius:50%;background:#b8860b;border:2px solid white;"></div>';
         
-        $circles .= "<circle cx='$x' cy='$y' r='3' fill='#b8860b' stroke='white' stroke-width='1.5'/>";
-        $labels_svg .= "<text x='$x' y='" . ($pad[1] + $gh + 15) . "' text-anchor='middle' font-size='8' fill='#666' transform='rotate(-30,$x," . ($pad[1] + $gh + 15) . ")'>" . htmlspecialchars($labels[$i]) . "</text>";
+        // Valeur au-dessus
+        $points_html .= '<div style="position:absolute;left:' . round($x - 18) . 'px;top:' . round($y - 18) . 'px;width:36px;text-align:center;font-size:8px;font-weight:bold;color:#b8860b;">' . number_format($w, 1) . '</div>';
         
-        // Valeur du poids au-dessus du point
-        $labels_svg .= "<text x='$x' y='" . ($y - 8) . "' text-anchor='middle' font-size='7' fill='#b8860b' font-weight='bold'>" . number_format($w, 1) . "</text>";
+        // Ligne de connexion entre points
+        if ($i > 0) {
+            $prev_w = $weights[$i - 1];
+            $prev_ratio = ($prev_w - $baseline_w) / ($top_w - $baseline_w);
+            $prev_y = $chart_height - ($prev_ratio * $chart_height);
+            $prev_y = max(5, min($chart_height - 5, $prev_y));
+            $prev_x = $left_margin + ($i - 1) * $point_spacing;
+            
+            // On dessine la ligne entre les deux points
+            $points_html .= '<div style="position:absolute;left:' . round($prev_x) . 'px;top:' . round(min($prev_y, $y)) . 'px;width:' . round(abs($x - $prev_x)) . 'px;height:' . round(abs($y - $prev_y) + 1) . 'px;overflow:hidden;">';
+            if ($prev_y < $y) {
+                // Montant
+                $points_html .= '<div style="position:absolute;left:0;top:0;width:1px;height:100%;background:#b8860b;"></div>';
+                $points_html .= '<div style="position:absolute;left:0;top:' . round($y - $prev_y) . 'px;width:100%;height:1px;background:#b8860b;"></div>';
+            } else if ($prev_y > $y) {
+                // Descendant
+                $points_html .= '<div style="position:absolute;left:0;top:0;width:1px;height:100%;background:#b8860b;"></div>';
+                $points_html .= '<div style="position:absolute;left:0;top:0;width:100%;height:1px;background:#b8860b;"></div>';
+            } else {
+                // Horizontal
+                $points_html .= '<div style="position:absolute;left:0;top:50%;width:100%;height:1px;background:#b8860b;"></div>';
+            }
+            $points_html .= '</div>';
+        }
+        
+        // Label date
+        $labels_html .= '<div style="position:absolute;left:' . round($x - 20) . 'px;top:' . ($chart_height + 5) . 'px;width:40px;text-align:center;font-size:7px;color:#666;">' . htmlspecialchars($labels[$i]) . '</div>';
     }
     
-    // Courbe tour de taille
-    $has_taille = false;
-    foreach ($tailles as $i => $t) {
-        if ($t === null) continue;
-        $has_taille = true;
-        $x = $pad[0] + ($nb > 1 ? $i * $x_step : $gw / 2);
-        $y = $pad[1] + $gh - (($t - $min_t) / ($max_t - $min_t)) * $gh;
-        $y = max($pad[1], min($pad[1] + $gh, $y));
-        $lines_t .= ($lines_t === '' ? " M$x,$y" : " L$x,$y");
-        $circles .= "<circle cx='$x' cy='$y' r='3' fill='#e74c3c' stroke='white' stroke-width='1.5'/>";
+    // Points tour de taille (si disponibles)
+    if ($has_tailles) {
+        foreach ($tailles as $i => $t) {
+            if ($t === null) continue;
+            $x = $left_margin + $i * $point_spacing;
+            $ratio = ($t - $baseline_t) / ($top_t - $baseline_t);
+            $y = $chart_height - ($ratio * $chart_height);
+            $y = max(5, min($chart_height - 5, $y));
+            
+            // Cercle rouge
+            $points_html .= '<div style="position:absolute;left:' . round($x - 5) . 'px;top:' . round($y - 5) . 'px;width:10px;height:10px;border-radius:50%;background:#e74c3c;border:2px solid white;"></div>';
+            
+            // Connexion avec le précédent non-null
+            for ($j = $i - 1; $j >= 0; $j--) {
+                if ($tailles[$j] !== null) {
+                    $prev_t = $tailles[$j];
+                    $prev_x = $left_margin + $j * $point_spacing;
+                    $prev_ratio = ($prev_t - $baseline_t) / ($top_t - $baseline_t);
+                    $prev_y = $chart_height - ($prev_ratio * $chart_height);
+                    $prev_y = max(5, min($chart_height - 5, $prev_y));
+                    
+                    $points_html .= '<div style="position:absolute;left:' . round($prev_x) . 'px;top:' . round(min($prev_y, $y)) . 'px;width:' . round(abs($x - $prev_x)) . 'px;height:' . round(abs($y - $prev_y) + 1) . 'px;overflow:hidden;opacity:0.6;">';
+                    if ($prev_y < $y) {
+                        $points_html .= '<div style="position:absolute;left:0;top:0;width:1px;height:100%;background:#e74c3c;"></div>';
+                        $points_html .= '<div style="position:absolute;left:0;top:' . round($y - $prev_y) . 'px;width:100%;height:1px;background:#e74c3c;"></div>';
+                    } else if ($prev_y > $y) {
+                        $points_html .= '<div style="position:absolute;left:0;top:0;width:1px;height:100%;background:#e74c3c;"></div>';
+                        $points_html .= '<div style="position:absolute;left:0;top:0;width:100%;height:1px;background:#e74c3c;"></div>';
+                    } else {
+                        $points_html .= '<div style="position:absolute;left:0;top:50%;width:100%;height:1px;background:#e74c3c;"></div>';
+                    }
+                    $points_html .= '</div>';
+                    break;
+                }
+            }
+        }
     }
     
-    // Grille horizontale
-    $grid = '';
-    for ($i = 0; $i <= 5; $i++) {
-        $y = $pad[1] + $gh * (1 - $i / 5);
-        $val_w = $min_w + ($max_w - $min_w) * $i / 5;
-        $grid .= "<line x1='{$pad[0]}' y1='$y' x2='" . ($W - $pad[2]) . "' y2='$y' stroke='#eee' stroke-width='0.5'/>";
-        $grid .= "<text x='" . ($pad[0] - 5) . "' y='" . ($y + 3) . "' text-anchor='end' font-size='8' fill='#999'>" . round($val_w, 1) . "</text>";
-    }
+    $html .= $points_html;
+    $html .= $labels_html;
+    $html .= '</div>';
     
     // Légende
-    $legend = "<rect x='" . ($W - 120) . "' y='5' width='115' height='35' fill='white' fill-opacity='0.9' rx='4'/>";
-    $legend .= "<line x1='" . ($W - 110) . "' y1='15' x2='" . ($W - 85) . "' y2='15' stroke='#b8860b' stroke-width='2'/>";
-    $legend .= "<text x='" . ($W - 80) . "' y='18' font-size='9' fill='#333'>Poids (kg)</text>";
-    if ($has_taille) {
-        $legend .= "<line x1='" . ($W - 110) . "' y1='30' x2='" . ($W - 85) . "' y2='30' stroke='#e74c3c' stroke-width='2' stroke-dasharray='4,3'/>";
-        $legend .= "<text x='" . ($W - 80) . "' y='33' font-size='9' fill='#333'>Tour taille (cm)</text>";
+    $html .= '<div style="text-align:center;margin-top:15px;font-size:11px;color:#333;">';
+    $html .= '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#b8860b;vertical-align:middle;margin-right:4px;"></span> <strong>Poids (kg)</strong>';
+    if ($has_tailles) {
+        $html .= ' &nbsp;&nbsp;&nbsp; ';
+        $html .= '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e74c3c;vertical-align:middle;margin-right:4px;"></span> <strong>Tour de taille (cm)</strong>';
     }
+    $html .= '</div>';
     
-    $svg = "<svg xmlns='http://www.w3.org/2000/svg' width='$W' height='$H' viewBox='0 0 $W $H' style='max-width:100%;'>
-        <rect width='$W' height='$H' fill='white'/>
-        $grid
-        <path d='$lines_w' fill='none' stroke='#b8860b' stroke-width='2'/>
-        " . ($has_taille && $lines_t ? "<path d='$lines_t' fill='none' stroke='#e74c3c' stroke-width='2' stroke-dasharray='5,4'/>" : '') . "
-        $circles
-        $labels_svg
-        $legend
-    </svg>";
-    
-    return $svg;
+    return $html;
 }
 
-$chartSvgInline = generateSvgChart($graphLabels, $graphWeights, $graphTailles);
+$chartHtmlInline = generateEvolutionChart($graphLabels, $graphWeights, $graphTailles);
 
 $ecart = ($c['poids_actuel'] ?? 0) - ($c['poids_objectif'] ?? 0);
 $imc_actuel = ($c['taille_cm'] ?? 0) > 0 ? ($c['poids_actuel'] ?? 0) / pow(($c['taille_cm'] / 100), 2) : 0;
@@ -205,7 +274,7 @@ $html = '
     </tr>
     <tr>
         <td class="label">Sexe / Âge</td>
-        <td class="value">' . ($c['sexe'] == 'F' ? 'Femme' : 'Homme') . ' — ' . ($c['age'] ?? 'N/R') . ' ans</td>
+        <td class="value">' . ($c['sexe'] == 'F' ? 'Femme' : 'Homme') . ' &mdash; ' . ($c['age'] ?? 'N/R') . ' ans</td>
     </tr>
     <tr>
         <td class="label">Téléphone</td>
@@ -236,7 +305,7 @@ $html = '
             <td>' . number_format($c['poids_actuel'] ?? 0, 1) . ' kg</td>
             <td>' . number_format($c['poids_objectif'] ?? 0, 1) . ' kg</td>
             <td style="color:' . ($ecart > 0 ? '#e74c3c' : '#27ae60') . ';">' . number_format($ecart, 1) . ' kg</td>
-            <td>' . ($c['taille_cm'] ?? '—') . ' cm</td>
+            <td>' . ($c['taille_cm'] ?? '&mdash;') . ' cm</td>
         </tr>
     </tbody>
 </table>
@@ -286,9 +355,9 @@ $html = '
 ' . $custom_fields_html . '
 
 <div class="section-title">📈 Courbe d\'Évolution</div>
-<div style="text-align:center; margin-top:10px; border:1px solid #eee; padding:10px; border-radius:8px;">
-    ' . $chartSvgInline . '
-    <p style="font-size:11px; color:#7f8c8d; margin-top:5px;">
+<div style="text-align:center; margin-top:10px; border:1px solid #eee; padding:15px 10px; border-radius:8px; background:#fafafa;">
+    ' . $chartHtmlInline . '
+    <p style="font-size:11px; color:#7f8c8d; margin-top:8px;">
         📊 Évolution sur ' . count($graphLabels) . ' consultation(s)
     </p>
 </div>
@@ -308,7 +377,6 @@ $html = '
     <tbody>';
 
 $prev_poids = null;
-$prev_taille = null;
 foreach ($historique as $h) {
     $diff_poids = '';
     if ($prev_poids !== null && $h['poids_mesure'] !== null) {
@@ -322,10 +390,10 @@ foreach ($historique as $h) {
         <tr>
             <td style="padding:7px;">' . date('d/m/Y', strtotime($h['date_consultation'])) . '</td>
             <td style="padding:7px;text-align:center;"><strong>' . number_format($h['poids_mesure'], 1) . '</strong> kg' . $diff_poids . '</td>
-            <td style="padding:7px;text-align:center;">' . ($h['tour_taille'] ? number_format($h['tour_taille'], 1) . ' cm' : '—') . '</td>
-            <td style="padding:7px;text-align:center;">' . ($h['imc'] ? number_format($h['imc'], 1) : '—') . '</td>
+            <td style="padding:7px;text-align:center;">' . ($h['tour_taille'] ? number_format($h['tour_taille'], 1) . ' cm' : '&mdash;') . '</td>
+            <td style="padding:7px;text-align:center;">' . ($h['imc'] ? number_format($h['imc'], 1) : '&mdash;') . '</td>
             <td style="padding:7px;text-align:center;">' . number_format($h['note_activite'], 0) . '/10</td>
-            <td style="padding:7px;">' . htmlspecialchars(mb_substr($h['notes_suivi'] ?? ($h['notes_alimentation'] ?? '—'), 0, 60)) . '</td>
+            <td style="padding:7px;">' . htmlspecialchars(mb_substr($h['notes_suivi'] ?? ($h['notes_alimentation'] ?? '&mdash;'), 0, 60)) . '</td>
         </tr>';
 }
 
@@ -338,7 +406,7 @@ $html .= '
 </div>
 
 <div class="footer">
-    Fiche générée par <strong>' . htmlspecialchars($c['cree_par'] ?? 'Système') . '</strong> — ' . date('d/m/Y à H:i') . '
+    Fiche générée par <strong>' . htmlspecialchars($c['cree_par'] ?? 'Système') . '</strong> &mdash; ' . date('d/m/Y à H:i') . '
 </div>';
 
 $dompdf = new Dompdf();
