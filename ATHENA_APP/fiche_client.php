@@ -18,7 +18,9 @@ $stmtH = $pdo->prepare("SELECT * FROM suivi_progression WHERE client_id = ? ORDE
 $stmtH->execute([$id]);
 $historique = $stmtH->fetchAll();
 
-// Graphique d'évolution (poids + tour de taille)
+// ============================================================
+// GRAPHIQUE SVG GÉNÉRÉ LOCALEMENT (sans dépendance externe)
+// ============================================================
 $graphLabels = [];
 $graphWeights = [];
 $graphTailles = [];
@@ -30,54 +32,102 @@ foreach ($stmtG->fetchAll() as $dg) {
     $graphTailles[] = $dg['tour_taille'] ? (float)$dg['tour_taille'] : null;
 }
 
-// Nettoyer les nulls en bout de tableau pour le graphique
+// Nettoyer les nulls en bout de tableau
 while (!empty($graphTailles) && end($graphTailles) === null) {
     array_pop($graphTailles);
 }
 
-$chartConfig = [
-    'type' => 'line',
-    'data' => [
-        'labels'   => $graphLabels,
-        'datasets' => [
-            [
-                'label'           => 'Poids (kg)',
-                'data'            => $graphWeights,
-                'borderColor'     => '#b8860b',
-                'backgroundColor' => 'rgba(184, 134, 11, 0.1)',
-                'fill'            => true,
-                'pointRadius'     => 3,
-                'yAxisID'         => 'y'
-            ],
-            [
-                'label'           => 'Tour de taille (cm)',
-                'data'            => $graphTailles,
-                'borderColor'     => '#e74c3c',
-                'backgroundColor' => 'rgba(231, 76, 60, 0.05)',
-                'fill'            => false,
-                'borderDash'      => [5, 5],
-                'pointRadius'     => 3,
-                'yAxisID'         => 'y1'
-            ]
-        ]
-    ],
-    'options' => [
-        'scales' => [
-            'y' => [
-                'title' => ['display' => true, 'text' => 'Poids (kg)']
-            ],
-            'y1' => [
-                'position' => 'right',
-                'title' => ['display' => true, 'text' => 'Tour de taille (cm)'],
-                'grid' => ['drawOnChartArea' => false]
-            ]
-        ]
-    ]
-];
+// Générer un graphique SVG inline
+function generateSvgChart($labels, $weights, $tailles) {
+    $nb = count($labels);
+    if ($nb === 0) return '<p style="text-align:center;color:#999;">Aucune donnée de suivi</p>';
+    
+    $W = 500; $H = 200;
+    $pad = [40, 45, 30, 20]; // left, top, right, bottom
+    $gw = $W - $pad[0] - $pad[2];
+    $gh = $H - $pad[1] - $pad[3];
+    
+    // Trouver les min/max pour les échelles
+    $w_all = array_filter($weights);
+    $t_all = array_filter($tailles);
+    $all_w = count($w_all) ? $w_all : [0, 100];
+    $all_t = count($t_all) ? $t_all : [0, 100];
+    $min_w = min($all_w); $max_w = max($all_w);
+    $min_t = min($all_t); $max_t = max($all_t);
+    $range_w = ($max_w - $min_w) ?: 10;
+    $range_t = ($max_t - $min_t) ?: 10;
+    $min_w = floor(($min_w - $range_w * 0.1) / 5) * 5;
+    $max_w = ceil(($max_w + $range_w * 0.1) / 5) * 5;
+    $min_t = floor(($min_t - $range_t * 0.1) / 5) * 5;
+    $max_t = ceil(($max_t + $range_t * 0.1) / 5) * 5;
+    if ($min_w >= $max_w) $max_w = $min_w + 10;
+    if ($min_t >= $max_t) $max_t = $min_t + 10;
+    
+    $x_step = $nb > 1 ? $gw / ($nb - 1) : $gw / 2;
+    
+    $lines_w = '';
+    $lines_t = '';
+    $circles = '';
+    $labels_svg = '';
+    
+    foreach ($weights as $i => $w) {
+        $x = $pad[0] + ($nb > 1 ? $i * $x_step : $gw / 2);
+        $y = $pad[1] + $gh - (($w - $min_w) / ($max_w - $min_w)) * $gh;
+        $y = max($pad[1], min($pad[1] + $gh, $y));
+        
+        $lines_w .= ($i > 0 ? " L$x,$y" : " M$x,$y");
+        
+        $circles .= "<circle cx='$x' cy='$y' r='3' fill='#b8860b' stroke='white' stroke-width='1.5'/>";
+        $labels_svg .= "<text x='$x' y='" . ($pad[1] + $gh + 15) . "' text-anchor='middle' font-size='8' fill='#666' transform='rotate(-30,$x," . ($pad[1] + $gh + 15) . ")'>" . htmlspecialchars($labels[$i]) . "</text>";
+        
+        // Valeur du poids au-dessus du point
+        $labels_svg .= "<text x='$x' y='" . ($y - 8) . "' text-anchor='middle' font-size='7' fill='#b8860b' font-weight='bold'>" . number_format($w, 1) . "</text>";
+    }
+    
+    // Courbe tour de taille
+    $has_taille = false;
+    foreach ($tailles as $i => $t) {
+        if ($t === null) continue;
+        $has_taille = true;
+        $x = $pad[0] + ($nb > 1 ? $i * $x_step : $gw / 2);
+        $y = $pad[1] + $gh - (($t - $min_t) / ($max_t - $min_t)) * $gh;
+        $y = max($pad[1], min($pad[1] + $gh, $y));
+        $lines_t .= ($lines_t === '' ? " M$x,$y" : " L$x,$y");
+        $circles .= "<circle cx='$x' cy='$y' r='3' fill='#e74c3c' stroke='white' stroke-width='1.5'/>";
+    }
+    
+    // Grille horizontale
+    $grid = '';
+    for ($i = 0; $i <= 5; $i++) {
+        $y = $pad[1] + $gh * (1 - $i / 5);
+        $val_w = $min_w + ($max_w - $min_w) * $i / 5;
+        $grid .= "<line x1='{$pad[0]}' y1='$y' x2='" . ($W - $pad[2]) . "' y2='$y' stroke='#eee' stroke-width='0.5'/>";
+        $grid .= "<text x='" . ($pad[0] - 5) . "' y='" . ($y + 3) . "' text-anchor='end' font-size='8' fill='#999'>" . round($val_w, 1) . "</text>";
+    }
+    
+    // Légende
+    $legend = "<rect x='" . ($W - 120) . "' y='5' width='115' height='35' fill='white' fill-opacity='0.9' rx='4'/>";
+    $legend .= "<line x1='" . ($W - 110) . "' y1='15' x2='" . ($W - 85) . "' y2='15' stroke='#b8860b' stroke-width='2'/>";
+    $legend .= "<text x='" . ($W - 80) . "' y='18' font-size='9' fill='#333'>Poids (kg)</text>";
+    if ($has_taille) {
+        $legend .= "<line x1='" . ($W - 110) . "' y1='30' x2='" . ($W - 85) . "' y2='30' stroke='#e74c3c' stroke-width='2' stroke-dasharray='4,3'/>";
+        $legend .= "<text x='" . ($W - 80) . "' y='33' font-size='9' fill='#333'>Tour taille (cm)</text>";
+    }
+    
+    $svg = "<svg xmlns='http://www.w3.org/2000/svg' width='$W' height='$H' viewBox='0 0 $W $H' style='max-width:100%;'>
+        <rect width='$W' height='$H' fill='white'/>
+        $grid
+        <path d='$lines_w' fill='none' stroke='#b8860b' stroke-width='2'/>
+        " . ($has_taille && $lines_t ? "<path d='$lines_t' fill='none' stroke='#e74c3c' stroke-width='2' stroke-dasharray='5,4'/>" : '') . "
+        $circles
+        $labels_svg
+        $legend
+    </svg>";
+    
+    return $svg;
+}
 
-$chartUrl  = "https://quickchart.io/chart?width=500&height=220&c=" . urlencode(json_encode($chartConfig));
-$chartData = base64_encode(@file_get_contents($chartUrl));
-$chartSrc  = 'data:image/png;base64,' . $chartData;
+$chartSvgInline = generateSvgChart($graphLabels, $graphWeights, $graphTailles);
 
 $ecart = ($c['poids_actuel'] ?? 0) - ($c['poids_objectif'] ?? 0);
 $imc_actuel = ($c['taille_cm'] ?? 0) > 0 ? ($c['poids_actuel'] ?? 0) / pow(($c['taille_cm'] / 100), 2) : 0;
@@ -237,9 +287,9 @@ $html = '
 
 <div class="section-title">📈 Courbe d\'Évolution</div>
 <div style="text-align:center; margin-top:10px; border:1px solid #eee; padding:10px; border-radius:8px;">
-    <img src="' . $chartSrc . '" width="100%">
+    ' . $chartSvgInline . '
     <p style="font-size:11px; color:#7f8c8d; margin-top:5px;">
-        🟤 Poids (kg) — 🔴 Tour de taille (cm) — Évolution sur ' . count($graphLabels) . ' consultation(s)
+        📊 Évolution sur ' . count($graphLabels) . ' consultation(s)
     </p>
 </div>
 
