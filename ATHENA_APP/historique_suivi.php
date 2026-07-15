@@ -325,8 +325,9 @@ $msg = $_GET['msg'] ?? '';
                 </thead>
                 <tbody>
                     <?php 
+                    // Inverser pour calculer les différences dans l'ordre chronologique
+                    $historique_chrono = array_reverse($historique);
                     $prev_poids = null;
-                    $prev_taille = null;
                     foreach ($historique as $i => $h): 
                         $row_class = ($i === 0) ? 'style="background:#fffbeb;"' : '';
                     ?>
@@ -345,12 +346,23 @@ $msg = $_GET['msg'] ?? '';
                         </td>
                         <td>
                             <strong><?= number_format($h['poids_mesure'], 1) ?></strong> kg
-                            <?php if ($prev_poids !== null && $h['poids_mesure'] !== null): 
-                                $diff = $h['poids_mesure'] - $prev_poids; ?>
+                            <?php 
+                            // Calcul de la différence dans l'ordre chronologique
+                            $diff = null;
+                            $chrono_index = count($historique) - 1 - $i;
+                            if ($chrono_index > 0 && isset($historique_chrono[$chrono_index]) && isset($historique_chrono[$chrono_index - 1])) {
+                                $current = $historique_chrono[$chrono_index]['poids_mesure'];
+                                $previous = $historique_chrono[$chrono_index - 1]['poids_mesure'];
+                                if ($current !== null && $previous !== null) {
+                                    $diff = $current - $previous;
+                                }
+                            }
+                            if ($diff !== null): 
+                            ?>
                                 <br><span class="difference <?= $diff > 0 ? 'up' : ($diff < 0 ? 'down' : 'same') ?>">
                                     <?= $diff > 0 ? '+' : '' ?><?= number_format($diff, 1) ?> kg
                                 </span>
-                            <?php endif; $prev_poids = $h['poids_mesure']; ?>
+                            <?php endif; ?>
                         </td>
                         <td><?= (int)$h['taille_mesure'] ?: '—' ?> cm</td>
                         <td><?= $h['tour_taille'] ? number_format($h['tour_taille'], 1) . ' cm' : '—' ?></td>
