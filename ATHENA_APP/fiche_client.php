@@ -354,14 +354,17 @@ $html = '
 
 ' . $custom_fields_html . '
 
-<div class="section-title">📈 Courbe d\'Évolution</div>
-<div style="text-align:center; margin-top:10px; border:1px solid #eee; padding:15px 10px; border-radius:8px; background:#fafafa;">
-    ' . $chartHtmlInline . '
-    <p style="font-size:11px; color:#7f8c8d; margin-top:8px;">
-        📊 Évolution sur ' . count($graphLabels) . ' consultation(s)
-    </p>
+<div style="page-break-before:auto; page-break-inside:avoid; margin-top:30px;">
+    <div class="section-title">Courbe d Evolution</div>
+    <div style="text-align:center; padding:20px 10px; border:1px solid #ccc; background:#fafafa;">
+        ' . $chartHtmlInline . '
+        <p style="font-size:11px; color:#7f8c8d; margin-top:8px;">
+            Evolution sur ' . count($graphLabels) . ' consultation(s)
+        </p>
+    </div>
 </div>
 
+<div style="page-break-before:auto;">
 <div class="section-title">Historique des Consultations</div>
 <table class="info-table" style="font-size:11px;">
     <thead>
