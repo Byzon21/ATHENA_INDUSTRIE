@@ -379,13 +379,22 @@ $html = '
     </thead>
     <tbody>';
 
+// Reconstruction dans l'ordre chronologique pour bien calculer les différences
+$historique_chrono = array_reverse($historique);
+
 $prev_poids = null;
-foreach ($historique as $h) {
+foreach ($historique_chrono as $h) {
     $diff_poids = '';
     if ($prev_poids !== null && $h['poids_mesure'] !== null) {
-        $d = $h['poids_mesure'] - $prev_poids;
-        $color = $d > 0 ? '#e74c3c' : ($d < 0 ? '#27ae60' : '#7f8c8d');
-        $diff_poids = ' <span style="color:' . $color . ';font-weight:700;">(' . ($d > 0 ? '+' : '') . number_format($d, 1) . ')</span>';
+        // différence = poids_actuel - poids_précédent
+        // perte de poids = négatif (ex: 137-140 = -3) -> affiché (-3)
+        // prise de poids = positif (ex: 143-140 = +3) -> affiché (+3)
+        $d = round($h['poids_mesure'] - $prev_poids, 1);
+        if ($d != 0) {
+            $color = $d > 0 ? '#e74c3c' : '#27ae60';
+            $sign = $d > 0 ? '+' : '';
+            $diff_poids = ' <span style="color:' . $color . ';font-weight:700;">(' . $sign . number_format($d, 1) . ')</span>';
+        }
     }
     $prev_poids = $h['poids_mesure'];
     
